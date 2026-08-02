@@ -5,70 +5,146 @@ using UnityEngine.UI;
 
 public class HealthBar : MonoBehaviour
 {
-
-
-    [Title("Layout References")]
+    [Title("Layout References (Direct Siblings in Content)")]
     [SerializeField] private LayoutElement _staminaLayout;
     [SerializeField] private LayoutElement _ghostLayout;
     [SerializeField] private LayoutElement _hitLayout;
     [SerializeField] private LayoutElement _poisonLayout;
     [SerializeField] private LayoutElement _hungerLayout;
 
-    [Title("Ghost Animation Settings")]
-    [SerializeField] private float _ghostDelay = 0.25f;
-    [SerializeField] private float _ghostDuration = 0.4f;
-    [SerializeField] private Ease _ghostEase = Ease.OutQuad;
-    private Tween _ghostTween;
-    private float _currentGhostValue;
+    [Title("Animation Settings")]
+    [SerializeField] private float _animDuration = 0.35f;
+    [SerializeField] private float _ghostDelay = 0.15f;
+    [SerializeField] private Ease _animEase = Ease.OutCubic;
 
+    [Title("Current State (Read Only)")]
+    [ShowInInspector, ReadOnly] private float _stamina = 100f;
+    [ShowInInspector, ReadOnly] private float _ghost = 0f;
+    [ShowInInspector, ReadOnly] private float _hit = 0f;
+    [ShowInInspector, ReadOnly] private float _poison = 0f;
+    [ShowInInspector, ReadOnly] private float _hunger = 0f;
 
-    // TODO:
-    // maybe dans d'autre script
-    // des bouton pour give de la vie au joueur, give du poison, clear ceci cela, un vrai panel digne de ce nom.
+    private Sequence _animSequence;
 
-    // Comment lié les valeurs genre:
-    // Hunger = 0 rien 100 il peu plus sprinter et il meurt car ça a tout rempli.
-    // Poison = 0 rien 100 pareil
-    // Hit = 0 full vie donc la stamina 100 sa barre est rempli de rouge de hit. (c'est life dans notre code, il faut qu'on refacto tout et qu'on se mette OK sur des nom)
-    // Et une fonction sprint ! qui sera lié a la barre espace avec le panel de bouton. (appui ça sprint, relache ça arrête et ça remonte doucement.)
-    // ce sprint diminuera notre stamina (100 tout vert défaut début du jeu a 0 rien, mais c'est Ghost qui s'augmente dans notre UI pour représenter ça)
-
-    // probleme: il faut lier ce 0 a 100 pour notre width qui est chelou, genre nous c'est 940 de large en tout, et puis plus on rajoute des valeurs sur des truc, plus j'ai l'impression que c'est pas précis car Unity avec ses layout doit ptet faire des % pour que tout les preffered sois d'accord entre eux.
-    // plus tard il faudrat donc comme dans peak la rendre dépassable, et le dépassement c'est des pointillé quoi.
-    // c'est une étape plus lointaine.
-
-    //plus besoin de setactive parceque plus de spacing a gerer !
-
-    [Button("Test Update Bar", ButtonSizes.Medium)]
-    public void UpdateHealthBar(float stamina, float hitDamage, float poison, float hunger)
+    private void Start()
     {
-        //update flexibleWidth (0 -> 100)
-        _staminaLayout.flexibleWidth = Mathf.Max(0, stamina);
-        _hitLayout.flexibleWidth = Mathf.Max(0, hitDamage);
-        _poisonLayout.flexibleWidth = Mathf.Max(0, poison);
-        _hungerLayout.flexibleWidth = Mathf.Max(0, hunger);
+        ResetBar();
+    }
 
-        // animation
-        float targetGhost = Mathf.Max(0, 100f - (stamina + hitDamage + poison + hunger));
-        _ghostTween?.Kill();
-        _ghostTween = DOVirtual.Float(_currentGhostValue, targetGhost, _ghostDuration, value =>
+    [Button("Reset / Full Health", ButtonSizes.Medium)]
+    public void ResetBar()
+    {
+        _stamina = 100f;
+        _ghost = 0f;
+        _hit = 0f;
+        _poison = 0f;
+        _hunger = 0f;
+        AnimateAllToCurrentState(instant: true);
+    }
+
+    [Button("Take Damage", ButtonSizes.Medium)]
+    public void TakeDamage(float damage = 15f)
+    {
+        float actualDamage = Mathf.Min(damage, _stamina);
+        _stamina -= actualDamage;
+        _hit += actualDamage;
+        _ghost += actualDamage; // Ghost absorbs lost stamina, then fades
+
+        AnimateAllToCurrentState();
+    }
+
+    [Button("Apply Poison", ButtonSizes.Medium)]
+    public void ApplyPoison(float amount = 10f)
+    {
+        _poison = Mathf.Clamp(_poison + amount, 0f, 100f - _hunger);
+        ClampStaminaToAvailableSpace();
+        AnimateAllToCurrentState();
+    }
+
+    [Button("Apply Hunger", ButtonSizes.Medium)]
+    public void ApplyHunger(float amount = 10f)
+    {
+        _hunger = Mathf.Clamp(_hunger + amount, 0f, 100f - _poison);
+        ClampStaminaToAvailableSpace();
+        AnimateAllToCurrentState();
+    }
+
+    [Button("Use Stamina (Sprint)", ButtonSizes.Medium)]
+    public void UseStamina(float amount = 20f)
+    {
+        float drain = Mathf.Min(amount, _stamina);
+        _stamina -= drain;
+        _ghost += drain;
+        AnimateAllToCurrentState();
+    }
+
+    [Button("Update All Values Custom", ButtonSizes.Medium)]
+    public void SetValues(float stamina, float hit, float poison, float hunger)
+    {
+        _stamina = Mathf.Max(0, stamina);
+        _hit = Mathf.Max(0, hit);
+        _poison = Mathf.Max(0, poison);
+        _hunger = Mathf.Max(0, hunger);
+        AnimateAllToCurrentState();
+    }
+
+    private void ClampStaminaToAvailableSpace()
+    {
+        float maxAvailable = Mathf.Max(0f, 100f - (_poison + _hunger + _hit));
+        if (_stamina > maxAvailable)
         {
-            _currentGhostValue = value;
-            _ghostLayout.flexibleWidth = value;
-        })
-        .SetDelay(_ghostDelay)
-        .SetEase(_ghostEase);
+            _stamina = maxAvailable;
+        }
     }
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    private void AnimateAllToCurrentState(bool instant = false)
     {
+        _animSequence?.Kill();
 
+        if (instant)
+        {
+            SetLayoutFlexibleWidth(_staminaLayout, _stamina);
+            SetLayoutFlexibleWidth(_ghostLayout, _ghost);
+            SetLayoutFlexibleWidth(_hitLayout, _hit);
+            SetLayoutFlexibleWidth(_poisonLayout, _poison);
+            SetLayoutFlexibleWidth(_hungerLayout, _hunger);
+            return;
+        }
+
+        _animSequence = DOTween.Sequence();
+
+        // Animate main bars smoothly
+        TweenFlexibleWidth(_animSequence, _staminaLayout, _stamina);
+        TweenFlexibleWidth(_animSequence, _hitLayout, _hit);
+        TweenFlexibleWidth(_animSequence, _poisonLayout, _poison);
+        TweenFlexibleWidth(_animSequence, _hungerLayout, _hunger);
+
+        // Ghost bar animates with a slight lag/delay
+        _animSequence.Insert(_ghostDelay, DOVirtual.Float(
+            _ghostLayout != null ? _ghostLayout.flexibleWidth : 0f,
+            0f, // Ghost fades down to 0 over time
+            _animDuration * 1.5f,
+            val =>
+            {
+                _ghost = val;
+                SetLayoutFlexibleWidth(_ghostLayout, val);
+            }
+        ).SetEase(_animEase));
     }
 
-    // Update is called once per frame
-    void Update()
+    private void TweenFlexibleWidth(Sequence seq, LayoutElement layout, float targetValue)
     {
+        if (layout == null) return;
+        seq.Join(DOVirtual.Float(layout.flexibleWidth, targetValue, _animDuration, val =>
+        {
+            SetLayoutFlexibleWidth(layout, val);
+        }).SetEase(_animEase));
+    }
 
+    private void SetLayoutFlexibleWidth(LayoutElement layout, float val)
+    {
+        if (layout == null) return;
+        layout.flexibleWidth = Mathf.Max(0f, val);
     }
 }
+
