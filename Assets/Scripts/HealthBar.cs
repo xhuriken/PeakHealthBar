@@ -1,3 +1,4 @@
+using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.UI;
@@ -6,16 +7,19 @@ public class HealthBar : MonoBehaviour
 {
 
 
+    [Title("Layout References")]
     [SerializeField] private LayoutElement _staminaLayout;
-    [SerializeField] private GameObject _staminaObject;
     [SerializeField] private LayoutElement _ghostLayout;
-    [SerializeField] private GameObject _ghostObject;
+    [SerializeField] private LayoutElement _hitLayout;
     [SerializeField] private LayoutElement _poisonLayout;
-    [SerializeField] private GameObject _poisonObject;
-    [SerializeField] private LayoutElement _lifeLayout;
-    [SerializeField] private GameObject _lifeObject;
+    [SerializeField] private LayoutElement _hungerLayout;
 
-    [SerializeField] private GameObject _Others;
+    [Title("Ghost Animation Settings")]
+    [SerializeField] private float _ghostDelay = 0.25f;
+    [SerializeField] private float _ghostDuration = 0.4f;
+    [SerializeField] private Ease _ghostEase = Ease.OutQuad;
+    private Tween _ghostTween;
+    private float _currentGhostValue;
 
 
     // TODO:
@@ -35,14 +39,25 @@ public class HealthBar : MonoBehaviour
 
     //plus besoin de setactive parceque plus de spacing a gerer !
 
-    [Button]
-    public void UpdateHealthBar(float ghostAmount, float hitAmount, float poisonAmount)
+    [Button("Test Update Bar", ButtonSizes.Medium)]
+    public void UpdateHealthBar(float stamina, float hitDamage, float poison, float hunger)
     {
-        _ghostLayout.preferredWidth = ghostAmount;
-        _lifeLayout.preferredWidth = hitAmount;
-        _poisonLayout.preferredWidth = poisonAmount;
-        // juste ce code suffi a marcher maintenant !
+        //update flexibleWidth (0 -> 100)
+        _staminaLayout.flexibleWidth = Mathf.Max(0, stamina);
+        _hitLayout.flexibleWidth = Mathf.Max(0, hitDamage);
+        _poisonLayout.flexibleWidth = Mathf.Max(0, poison);
+        _hungerLayout.flexibleWidth = Mathf.Max(0, hunger);
 
+        // animation
+        float targetGhost = Mathf.Max(0, 100f - (stamina + hitDamage + poison + hunger));
+        _ghostTween?.Kill();
+        _ghostTween = DOVirtual.Float(_currentGhostValue, targetGhost, _ghostDuration, value =>
+        {
+            _currentGhostValue = value;
+            _ghostLayout.flexibleWidth = value;
+        })
+        .SetDelay(_ghostDelay)
+        .SetEase(_ghostEase);
     }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
